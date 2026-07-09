@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quarantine Lab: Labrador-Sized Bug Simulator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@300;400;600;800&display=swap');
+        
+        .font-mono-retro {
+            font-family: 'Share Tech Mono', monospace;
+        }
+        .font-sans-inter {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        /* Custom glowing effects */
+        .glow-green {
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.15);
+        }
+        .glow-red {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
+        }
+        .glow-yellow {
+            box-shadow: 0 0 15px rgba(234, 179, 8, 0.15);
+        }
+        .glow-blue {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
+        }
+        
+        /* Scanlines overlay for retro terminal feel */
+        .scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.04),
+                rgba(0, 255, 0, 0.02),
+                rgba(0, 0, 255, 0.04)
+            );
+            background-size: 100% 4px, 6px 100%;
+        }
+
+        /* Hazard stripe animation */
+        @keyframes hazardScroll {
+            0% { background-position: 0 0; }
+            100% { background-position: 40px 0; }
+        }
+        .hazard-stripes {
+            background: repeating-linear-gradient(
+                -45deg,
+                #eab308,
+                #eab308 10px,
+                #1e1b4b 10px,
+                #1e1b4b 20px
+            );
+            background-size: 40px 40px;
+            animation: hazardScroll 2s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans-inter flex flex-col selection:bg-yellow-500 selection:text-slate-950">
+
+    <!-- Top Status Bar -->
+    <div class="w-full hazard-stripes h-2"></div>
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur px-4 md:px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-yellow-500 text-slate-950 rounded-lg animate-pulse">
+                <i data-lucide="biohazard" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold font-mono-retro tracking-widest text-yellow-400">PROJECT: L.A.E.S. V2</h1>
+                <p class="text-[10px] md:text-xs text-slate-400 font-mono-retro">TACTICAL LABRADOR-SIZED ANIMAL SIMULATOR</p>
+            </div>
+        </div>
+        
+        <!-- Score & Dossier Stats Tracker -->
+        <div class="flex items-center gap-3 md:gap-4 flex-wrap">
+            <div class="flex gap-2 text-[11px] font-mono-retro bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                <span class="text-emerald-400">EXTRACTIONS: <span id="statSurvivals">0</span></span>
+                <span class="text-slate-600">|</span>
+                <span class="text-red-400">CASUALTIES: <span id="statDeaths">0</span></span>
+                <span class="text-slate-600">|</span>
+                <span class="text-blue-400">MUTATIONS: <span id="statMutations">1</span></span>
+            </div>
+            <button id="soundBtn" onclick="toggleSound()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-emerald-500 text-slate-300 hover:text-emerald-400 transition-all font-mono-retro text-xs">
+                <i data-lucide="volume-2" id="soundIcon" class="w-4 h-4 text-emerald-400"></i>
+                <span id="soundText" class="hidden sm:inline">AUDIO: SYNTH ON</span>
+            </button>
+            <div class="px-3 py-1.5 bg-red-950/40 border border-red-900 rounded-lg text-red-400 font-mono-retro text-xs animate-pulse flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                SYSTEM: BREACHED
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left Column: Settings, Inventory, Presets (5 Cols) -->
+        <section class="lg:col-span-5 flex flex-col gap-6">
+            
+            <!-- Panel 1: Laboratory Control / Species Synthesizer -->
+            <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 glow-green relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-3 text-emerald-500/10 pointer-events-none">
+                    <i data-lucide="dna" class="w-24 h-24"></i>
+                </div>
+                <h2 class="text-sm font-bold font-mono-retro text-emerald-400 mb-3 flex items-center gap-2 tracking-widest">
+                    <i data-lucide="crosshair" class="w-4 h-4 text-emerald-400"></i>
+                    BIOLOGICAL GENETIC SYNTHESIZER
+                </h2>
+                
+                <!-- Input Field -->
+                <div class="space-y-2 mb-4">
+                    <div class="flex gap-2">
+                        <input type="text" id="creatureInput" placeholder="Enter custom creature (e.g. Jumping Spider, Slug)" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono-retro">
+                        <button onclick="summonCustomCreature()" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-lg active:scale-95 font-mono-retro">
+                            <i data-lucide="flask-conical" class="w-3.5 h-3.5"></i>
+                            SYNTH
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Presets -->
+                <div class="space-y-2">
+                    <span class="block text-[11px] font-mono-retro text-slate-400 uppercase tracking-wider">Known Hostile Profiles</span>
+                    <div class="grid grid-cols-2 gap-2" id="presetContainer">
+                        <!-- Instantiated by Javascript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 2: Physical Properties & Weakness Readout -->
+            <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 glow-blue">
+                <h3 class="text-xs font-bold font-mono-retro text-blue-400 mb-3 uppercase tracking-widest flex items-center gap-1.5">
+                    <i data-lucide="microscope" class="w-4 h-4 text-blue-400"></i>
+                    Threat Profile Analyzer
+                </h3>
+                <div id="threatReport" class="grid grid-cols-2 gap-3 text-xs font-mono-retro">
+                    <!-- Updated dynamically -->
+                    <div class="bg-slate-950/60 p-2 rounded-xl border border-slate-800/60">
+                        <span class="text-slate-500 block uppercase text-[10px]">Aggression Factor</span>
+                        <span id="statAggression" class="text-red-400 font-bold">EXTREME (9/10)</span>
+                    </div>
+                    <div class="bg-slate-950/60 p-2 rounded-xl border border-slate-800/60">
+                        <span class="text-slate-500 block uppercase text-[10px]">Shell Thickness</span>
+                        <span id="statArmor" class="text-slate-300 font-bold">LIGHT CHITIN</span>
+                    </div>
+                    <div class="bg-slate-950/60 p-2 rounded-xl border border-slate-800/60">
+                        <span class="text-slate-500 block uppercase text-[10px]">Movement Speed</span>
+                        <span id="statSpeed" class="text-yellow-400 font-bold">LIGHTNING REACTION</span>
+                    </div>
+                    <div class="bg-slate-950/60 p-2 rounded-xl border border-slate-800/60">
+                        <span class="text-slate-500 block uppercase text-[10px]">Primary Weakness</span>
+                        <span id="statWeakness" class="text-emerald-400 font-bold">BLUNT CRUSH / SLOW ATTACKS</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 3: Live Feed Visual Generator -->
+            <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 glow-yellow flex flex-col min-h-[300px]">
+                <h3 class="text-xs font-bold font-mono-retro text-yellow-500 mb-3 uppercase tracking-widest flex items-center gap-1.5">
+                    <i data-lucide="eye" class="w-4 h-4 text-yellow-500"></i>
+                    Environmental Bio-Camera
+                </h3>
+                
+                <!-- Display Image Box -->
+                <div class="flex-1 bg-slate-950 rounded-xl border border-slate-800/80 overflow-hidden relative flex flex-col justify-center items-center min-h-[180px] mb-4 group">
+                    <div class="scanlines absolute inset-0 pointer-events-none opacity-40"></div>
+                    
+                    <!-- Loading overlay -->
+                    <div id="imageLoading" class="absolute inset-0 bg-slate-950/90 flex flex-col justify-center items-center gap-3 transition-opacity duration-300 hidden z-10">
+                        <div class="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+                        <p class="text-[10px] font-mono-retro text-yellow-400 animate-pulse uppercase tracking-widest">Rendering AI Snapshot...</p>
+                    </div>
+
+                    <!-- Main Image Display -->
+                    <img id="creatureImage" class="w-full h-full object-cover transition-all duration-300 group-hover:scale-105 hidden" alt="AI Generated Threat Model">
+                    
+                    <!-- Static Placeholder Info -->
+                    <div id="imagePlaceholder" class="p-4 text-center text-slate-500 flex flex-col items-center gap-2">
+                        <i data-lucide="camera-off" class="w-10 h-10 text-slate-700"></i>
+                        <p class="text-[10px] font-mono-retro max-w-xs leading-relaxed">No high-definition image generated. Select or synthesize a creature and click below to paint standard reality layout.</p>
+                    </div>
+                </div>
+
+                <button onclick="triggerImageGeneration()" id="renderBtn" class="w-full bg-slate-800/80 hover:bg-slate-700 text-yellow-400 font-mono-retro py-2 rounded-xl border border-yellow-500/20 hover:border-yellow-500 transition-all text-xs tracking-wider uppercase flex items-center justify-center gap-2">
+                    <i data-lucide="image" class="w-4 h-4 text-yellow-500"></i>
+                    Render AI Visual (Imagen 4)
+                </button>
+            </div>
+        </section>
+
+        <!-- Right Column: Combat Simulator & Live Action Feed (7 Cols) -->
+        <section class="lg:col-span-7 flex flex-col gap-6">
+            
+            <!-- Environmental Calibration Selector -->
+            <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-emerald-400 animate-pulse"></i>
+                    <span class="text-xs font-mono-retro text-slate-400 uppercase tracking-widest">Anomalous Arena Zone:</span>
+                </div>
+                <div class="flex gap-2 flex-wrap" id="envContainer">
+                    <!-- Environment tags loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- Target Health & Status Panel -->
+            <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 glow-red overflow-hidden relative">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                    
+                    <!-- Player Status -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-end font-mono-retro">
+                            <span class="text-xs text-slate-300 uppercase tracking-widest flex items-center gap-1">
+                                <i data-lucide="shield" class="w-3.5 h-3.5 text-emerald-400"></i>
+                                Subject Vitality (You)
+                            </span>
+                            <span id="playerHpText" class="text-emerald-400 font-bold text-sm">100 / 100 HP</span>
+                        </div>
+                        <div class="w-full bg-slate-950 h-3.5 rounded-full overflow-hidden border border-slate-800">
+                            <div id="playerHpBar" class="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full w-full transition-all duration-500"></div>
+                        </div>
+                    </div>
+
+                    <!-- Creature Status -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-end font-mono-retro">
+                            <span id="creatureNameText" class="text-xs text-red-400 uppercase tracking-widest truncate flex items-center gap-1">
+                                <i data-lucide="skull" class="w-3.5 h-3.5 text-red-500"></i>
+                                Threat: PRAYING MANTIS
+                            </span>
+                            <span id="creatureHpText" class="text-red-500 font-bold text-sm">100 / 100 HP</span>
+                        </div>
+                        <div class="w-full bg-slate-950 h-3.5 rounded-full overflow-hidden border border-slate-800">
+                            <div id="creatureHpBar" class="bg-gradient-to-r from-red-600 to-red-400 h-full w-full transition-all duration-500"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Terminal / Game Log Box -->
+            <div class="bg-slate-950 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col min-h-[350px] shadow-2xl relative">
+                <div class="scanlines absolute inset-0 pointer-events-none opacity-30 rounded-2xl"></div>
+                <div class="flex justify-between items-center mb-3 border-b border-slate-800/80 pb-2 z-10">
+                    <span class="text-xs font-mono-retro text-red-500 uppercase tracking-widest flex items-center gap-1.5 animate-pulse">
+                        <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                        LIVE NEURAL CHRONICLE
+                    </span>
+                    <button onclick="resetSimulator()" class="text-slate-500 hover:text-slate-300 transition-colors text-xs font-mono-retro flex items-center gap-1">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                        RESET SYSTEM
+                    </button>
+                </div>
+
+                <!-- Feed Output Area -->
+                <div id="consoleFeed" class="flex-1 overflow-y-auto font-mono-retro text-xs space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-800 leading-relaxed">
+                    <!-- Logs dynamically added here -->
+                </div>
+
+                <!-- Live Writing Prompt Loader -->
+                <div id="aiThinking" class="py-2.5 px-3 bg-slate-900/80 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs font-mono-retro items-center gap-2 mt-3 animate-pulse hidden">
+                    <div class="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span id="aiThinkingText">Constructing scenario vector...</span>
+                </div>
+            </div>
+
+            <!-- EXPANDED: Tactical Setup & Actions Cabinet -->
+            <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 space-y-4">
+                
+                <!-- Expanded Selection Rows (Stance & Gear Cabinet) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Supply Item Selector -->
+                    <div>
+                        <label class="block text-[10px] font-mono-retro text-slate-400 uppercase tracking-wider mb-1.5">Equip Tactical Supply Tool</label>
+                        <div class="grid grid-cols-2 gap-1.5" id="itemContainer">
+                            <!-- Injected dynamically -->
+                        </div>
+                    </div>
+                    <!-- Behavior/Stance Selector -->
+                    <div>
+                        <label class="block text-[10px] font-mono-retro text-slate-400 uppercase tracking-wider mb-1.5">Select Behavioral Attitude (Stance)</label>
+                        <div class="grid grid-cols-2 gap-1.5" id="stanceContainer">
+                            <!-- Injected dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-800/60 pt-4">
+                    <h4 class="text-[10px] font-mono-retro text-slate-400 uppercase tracking-wider mb-2">Execute Combat Decision</h4>
+                    
+                    <!-- Tactical Action Selection Grid -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                        <button onclick="triggerAction('FIGHT')" class="action-btn flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-red-500 hover:text-red-400 transition-all text-slate-400 gap-1">
+                            <i data-lucide="swords" class="w-4 h-4 text-red-500"></i>
+                            <span class="text-[10px] font-mono-retro uppercase font-bold">FIGHT BACK</span>
+                        </button>
+                        <button onclick="triggerAction('RUN')" class="action-btn flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-yellow-500 hover:text-yellow-400 transition-all text-slate-400 gap-1">
+                            <i data-lucide="footprints" class="w-4 h-4 text-yellow-500"></i>
+                            <span class="text-[10px] font-mono-retro uppercase font-bold">TACTICAL RUN</span>
+                        </button>
+                        <button onclick="triggerAction('HIDE')" class="action-btn flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-blue-500 hover:text-blue-400 transition-all text-slate-400 gap-1">
+                            <i data-lucide="ghost" class="w-4 h-4 text-blue-500"></i>
+                            <span class="text-[10px] font-mono-retro uppercase font-bold">STALKING SHELTER</span>
+                        </button>
+                        <button onclick="triggerAction('TAME')" class="action-btn flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500 hover:text-emerald-400 transition-all text-slate-400 gap-1">
+                            <i data-lucide="heart" class="w-4 h-4 text-emerald-500"></i>
+                            <span class="text-[10px] font-mono-retro uppercase font-bold">TAME ANIMAL</span>
+                        </button>
+                    </div>
+
+                    <!-- Custom Survival Action Input -->
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input type="text" id="customActionInput" placeholder="Write custom sequence... e.g., 'Climb up pipes and drop heavy metal box'" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-mono-retro">
+                        <button onclick="triggerCustomAction()" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-xs font-mono-retro transition-all shadow-lg flex items-center justify-center gap-1.5">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                            EXECUTE SEQUENCE
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Footer Information -->
+    <footer class="border-t border-slate-900 bg-slate-950 p-4 text-center text-xs text-slate-500 font-mono-retro space-y-1">
+        <div>LABRADOR-SIZED ANIMAL ENCOUNTER SIMULATOR (V2 - REALTIME VARIABLES CALIBRATED)</div>
+        <div class="text-slate-600">Combine Environments, Behavioral Stances, and Tactical tools to trigger incredibly chaotic, customized narrative paths.</div>
+    </footer>
+
+    <!-- System Modal alert UI -->
+    <div id="customModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl glow-red animate-fadeIn">
+            <div class="flex items-center gap-3 text-red-500 mb-4 font-mono-retro">
+                <i data-lucide="alert-octagon" class="w-8 h-8 animate-bounce"></i>
+                <h3 class="text-lg font-bold uppercase tracking-wider">SECURE LINK DISRUPTED</h3>
+            </div>
+            <p id="modalBody" class="text-xs text-slate-300 font-mono-retro mb-6 leading-relaxed">Safety protocols active.</p>
+            <div class="flex justify-end">
+                <button onclick="closeModal()" class="bg-red-600 hover:bg-red-500 text-slate-950 font-bold px-5 py-2 rounded-xl text-xs font-mono-retro transition-all shadow-lg">
+                    DISMISS SIGNAL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Logic Script Block -->
+    <script>
+        // Preset Database with extended stats and metadata
+        const PRESETS = {
+            MANTIS: {
+                name: "Praying Mantis",
+                emoji: "🦗",
+                description: "A hyper-efficient predator with 180-degree vision and spiked scythe-arms.",
+                hp: 120,
+                aggression: "9/10 (Severe)",
+                armor: "Hard Chitin Shell",
+                speed: "0.05-sec Strike Reflex",
+                weakness: "Heavy Sledgehammer Blows",
+                localFails: {
+                    FIGHT: "You try to strike, but the Mantis intercepts with lightning reflex. Its jagged scythe clamps into your arm while its mandibles click against your collarbone.",
+                    RUN: "You make a mad dash. The Mantis bounds into the air, landing flat on your back, heavy legs locking you in place.",
+                    HIDE: "You drop down out of sight. The Mantis swivels its head completely upside down, its compound gaze locking instantly onto your heat signatures.",
+                    TAME: "You reach out a trembling hand. The Mantis strikes, mistaking your pointing finger for an incredibly juicy, tender meal."
+                },
+                localDamage: { FIGHT: [20, 20], RUN: [30, 0], HIDE: [15, 0], TAME: [40, 5] }
+            },
+            CENTIPEDE: {
+                name: "Scolopendra Centipede",
+                emoji: "🐛",
+                description: "A fast, flexible venom ribbon with blade-like pincers and extreme aggression.",
+                hp: 140,
+                aggression: "10/10 (Critical)",
+                armor: "Flexible Segmented Plate",
+                speed: "Fluid Sinuous Crawl",
+                weakness: "Chemical Sprays & Flame",
+                localFails: {
+                    FIGHT: "You kick at it. Your shoe slides off its armor. Instantly, the centipede curls around your leg, burying its venomous fangs right through your pants.",
+                    RUN: "You sprint, but its rhythmic, high-velocity leg-clicks echo closer and closer on the concrete behind you.",
+                    HIDE: "You crouch, but the centipede uses its sensitive vibration-detecting antennae to pinpoint your rapid pulse behind the wall.",
+                    TAME: "You make gentle calming noises. The centipede lacks any central social pathways; it registers you only as warm flesh to consume."
+                },
+                localDamage: { FIGHT: [25, 15], RUN: [35, 0], HIDE: [20, 0], TAME: [45, 0] }
+            },
+            BOMBARDIER: {
+                name: "Bombardier Beetle",
+                emoji: "🪲",
+                description: "Armed with an internal boiler spraying scalding chemical streams.",
+                hp: 100,
+                aggression: "6/10 (Defensive)",
+                armor: "Thermal-Insulated Elytra",
+                speed: "Slow Heavy Scramble",
+                weakness: "Distraction (Laser Pointer)",
+                localFails: {
+                    FIGHT: "You strike the beetle. It aims its abdominal nozzle at your face—a violent POP sound fills the room as a jet of boiling acid clouds your vision.",
+                    RUN: "You turn to escape, but the toxic spray fills the air, blistering your hands and neck as you flee through the fog.",
+                    HIDE: "You duck behind shelter, but the scalding, yellow chemical mist slowly pools around your ankles, choking your lungs.",
+                    TAME: "You move in to pet its shell. The beetle startles, firing a defensive hot pop that instantly blisters your palm."
+                },
+                localDamage: { FIGHT: [35, 15], RUN: [20, 0], HIDE: [15, 0], TAME: [25, 0] }
+            },
+            ARMY_ANT: {
+                name: "Army Ant",
+                emoji: "🐜",
+                description: "A heavy, persistent soldier clad in steel-hard chitin with shearing jaws.",
+                hp: 110,
+                aggression: "8/10 (Highly Hostile)",
+                armor: "Heavy Steel-hard Chitin",
+                speed: "Steady Inexorable Chase",
+                weakness: "Slippery/Chemical Barriers",
+                localFails: {
+                    FIGHT: "You swing heavy iron at its head. It bounces off. The ant clamps its massive mandibles into your leg, refusing to release.",
+                    RUN: "You run, but the ant relentlessly follows your organic heat and cellular pheromone emissions.",
+                    HIDE: "You squeeze into a locker. Its massive, twitching antennae sweep the edges of the door, discovering your location instantly.",
+                    TAME: "You offer sugar. The ant takes the food but immediately proceeds to bite you with automated insect reflex."
+                },
+                localDamage: { FIGHT: [15, 25], RUN: [10, 0], HIDE: [10, 0], TAME: [30, 0] }
+            }
+        };
+
+        // Environment Options
+        const ENVIRONMENTS = {
+            SUBWAY: { name: "Subway Car", emoji: "🚇", desc: "A cramped, dimly lit metallic tunnel with zero side exits and slippery handrails." },
+            KITCHEN: { name: "Family Kitchen", emoji: "🍳", desc: "A domestic kitchen with slick wooden tiles, hot stoves, and plenty of fragile utensils." },
+            BASEMENT: { name: "Damp Basement", emoji: "🏚️", desc: "Dark, flooded crawlspaces, dusty pipes, and low overhead hanging beams." },
+            GREENHOUSE: { name: "Dense Greenhouse", emoji: "🌿", desc: "Humid air, tall hanging ferns, soil bags, and hundreds of fragile glass panes." }
+        };
+
+        // Item Options
+        const ITEMS = {
+            NONE: { name: "Bare Hands", emoji: "✊", desc: "Rely only on pure adrenaline.", attackMod: 0, defenseMod: 0 },
+            SPRAY: { name: "Bug Spray", emoji: "💨", desc: "High-corrosion chemical aerosol.", attackMod: 15, defenseMod: 5 },
+            HAMMER: { name: "Sledgehammer", emoji: "🔨", desc: "Destructive blunt kinetic force.", attackMod: 25, defenseMod: -5 },
+            LASER: { name: "Laser Pointer", emoji: "🔦", desc: "Creates intense visual distraction.", attackMod: 0, defenseMod: 20 },
+            PIZZA: { name: "Pepperoni Pizza", emoji: "🍕", desc: "Warm, irresistible greasy bribe.", attackMod: -5, defenseMod: 10 }
+        };
+
+        // Stance/Behavior Options
+        const STANCES = {
+            CALCULATING: { name: "Calculating", emoji: "🧠", dmgMod: 1.0, receiveMod: 0.8 },
+            PANICKED: { name: "Panicked", emoji: "😱", dmgMod: 0.5, receiveMod: 1.5 },
+            HEROIC: { name: "Heroic", emoji: "⚔️", dmgMod: 1.5, receiveMod: 1.2 },
+            FLIRTY: { name: "Flirty", emoji: "😘", dmgMod: 0.2, receiveMod: 1.8 }
+        };
+
+        // Core App State
+        const apiKey = ""; // Injected automatically at runtime
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'labrador-bug-simulator-v2';
+
+        let gameState = {
+            playerHp: 100,
+            creatureHp: 100,
+            maxCreatureHp: 100,
+            currentCreatureName: "Praying Mantis",
+            currentCreatureKey: "MANTIS",
+            currentEnv: "SUBWAY",
+            currentItem: "NONE",
+            currentStance: "CALCULATING",
+            soundEnabled: true,
+            audioCtx: null,
+            stats: {
+                survivals: 0,
+                deaths: 0,
+                mutations: 1
+            }
+        };
+
+        // Initialize Audio Context on user interaction
+        function initAudio() {
+            if (!gameState.audioCtx) {
+                gameState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // Web Audio Synthesizer
+        function playSynthSound(freq, duration, type = "triangle", sweepFreq = null) {
+            initAudio();
+            if (!gameState.soundEnabled || !gameState.audioCtx) return;
+
+            try {
+                const ctx = gameState.audioCtx;
+                const osc = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+                if (sweepFreq) {
+                    osc.frequency.exponentialRampToValueAtTime(sweepFreq, ctx.currentTime + duration);
+                }
+
+                gainNode.gain.setValueAtTime(0.12, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+
+                osc.connect(gainNode);
+                gainNode.connect(ctx.destination);
+
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            } catch (err) {
+                console.log("Audio synthesis blocked: ", err);
+            }
+        }
+
+        function playSynthAlarm() {
+            playSynthSound(160, 0.4, "sawtooth", 80);
+            setTimeout(() => {
+                playSynthSound(200, 0.4, "sawtooth", 100);
+            }, 150);
+        }
+
+        function playDamageSound(isPlayer) {
+            if (isPlayer) {
+                playSynthSound(90, 0.5, "sawtooth", 35); // low impact crunch
+            } else {
+                playSynthSound(550, 0.35, "sine", 1100); // high screech
+            }
+        }
+
+        // DOM Initializations
+        window.onload = function() {
+            // Render Preset Buttons
+            const presetContainer = document.getElementById("presetContainer");
+            Object.keys(PRESETS).forEach(key => {
+                const preset = PRESETS[key];
+                const btn = document.createElement("button");
+                btn.className = "flex items-center gap-2 p-2 rounded-xl bg-slate-950/80 border border-slate-800/80 hover:border-emerald-500 hover:text-white transition-all text-left text-xs font-mono-retro group";
+                btn.onclick = () => selectPreset(key);
+                btn.innerHTML = `
+                    <span class="text-base group-hover:scale-125 transition-transform duration-200">${preset.emoji}</span>
+                    <div class="truncate">
+                        <div class="font-bold text-slate-300 group-hover:text-emerald-400 truncate">${preset.name}</div>
+                    </div>
+                `;
+                presetContainer.appendChild(btn);
+            });
+
+            // Render Environments
+            const envContainer = document.getElementById("envContainer");
+            Object.keys(ENVIRONMENTS).forEach(key => {
+                const env = ENVIRONMENTS[key];
+                const btn = document.createElement("button");
+                btn.id = `envBtn_${key}`;
+                btn.className = "px-3 py-1 text-xs font-mono-retro rounded-lg border border-slate-800/60 transition-all hover:bg-emerald-950/20";
+                btn.onclick = () => setEnvironment(key);
+                btn.innerHTML = `<span>${env.emoji} ${env.name}</span>`;
+                envContainer.appendChild(btn);
+            });
+
+            // Render Items
+            const itemContainer = document.getElementById("itemContainer");
+            Object.keys(ITEMS).forEach(key => {
+                const item = ITEMS[key];
+                const btn = document.createElement("button");
+                btn.id = `itemBtn_${key}`;
+                btn.className = "px-2 py-1.5 text-left text-[11px] font-mono-retro rounded-xl border border-slate-800/60 transition-all hover:bg-slate-900 group flex items-center gap-1.5 w-full";
+                btn.onclick = () => setItem(key);
+                btn.innerHTML = `<span class="text-base">${item.emoji}</span> <span class="truncate group-hover:text-emerald-400">${item.name}</span>`;
+                itemContainer.appendChild(btn);
+            });
+
+            // Render Stances
+            const stanceContainer = document.getElementById("stanceContainer");
+            Object.keys(STANCES).forEach(key => {
+                const stance = STANCES[key];
+                const btn = document.createElement("button");
+                btn.id = `stanceBtn_${key}`;
+                btn.className = "px-2 py-1.5 text-left text-[11px] font-mono-retro rounded-xl border border-slate-800/60 transition-all hover:bg-slate-900 group flex items-center gap-1.5 w-full";
+                btn.onclick = () => setStance(key);
+                btn.innerHTML = `<span class="text-base">${stance.emoji}</span> <span class="truncate group-hover:text-emerald-400">${stance.name}</span>`;
+                stanceContainer.appendChild(btn);
+            });
+
+            // Load Saved Session Scoreboard if available locally
+            try {
+                const saved = localStorage.getItem(`laes_score_${appId}`);
+                if (saved) {
+                    gameState.stats = JSON.parse(saved);
+                    updateStatsUI();
+                }
+            } catch(e) {}
+
+            lucide.createIcons();
+            resetSimulator();
+        };
+
+        function toggleSound() {
+            gameState.soundEnabled = !gameState.soundEnabled;
+            const icon = document.getElementById("soundIcon");
+            const text = document.getElementById("soundText");
+            if (gameState.soundEnabled) {
+                icon.setAttribute("data-lucide", "volume-2");
+                icon.className = "w-4 h-4 text-emerald-400";
+                text.innerText = "AUDIO: SYNTH ON";
+                initAudio();
+                playSynthSound(440, 0.15, "triangle");
+            } else {
+                icon.setAttribute("data-lucide", "volume-x");
+                icon.className = "w-4 h-4 text-slate-500";
+                text.innerText = "AUDIO: MUTED";
+            }
+            lucide.createIcons();
+        }
+
+        // Selection Handlers
+        function setEnvironment(key) {
+            initAudio();
+            playSynthSound(280, 0.15, "sine");
+            gameState.currentEnv = key;
+            
+            // Highlight selected env tag
+            Object.keys(ENVIRONMENTS).forEach(k => {
+                const el = document.getElementById(`envBtn_${k}`);
+                if (k === key) {
+                    el.className = "px-3 py-1 text-xs font-mono-retro rounded-lg border border-emerald-500 text-emerald-400 bg-emerald-950/20 glow-green transition-all";
+                } else {
+                    el.className = "px-3 py-1 text-xs font-mono-retro rounded-lg border border-slate-800/60 transition-all hover:bg-emerald-950/20 text-slate-400";
+                }
+            });
+
+            logConsole(`Zone environmental parameters recalibrated to [${ENVIRONMENTS[key].name.toUpperCase()}]. ${ENVIRONMENTS[key].desc}`, "system");
+        }
+
+        function setItem(key) {
+            initAudio();
+            playSynthSound(320, 0.15, "sine");
+            gameState.currentItem = key;
+
+            // Highlight selected item button
+            Object.keys(ITEMS).forEach(k => {
+                const el = document.getElementById(`itemBtn_${k}`);
+                if (k === key) {
+                    el.className = "px-2 py-1.5 text-left text-[11px] font-mono-retro rounded-xl border border-blue-500 text-blue-400 bg-blue-950/20 glow-blue transition-all w-full flex items-center gap-1.5";
+                } else {
+                    el.className = "px-2 py-1.5 text-left text-[11px] font-mono-retro rounded-xl border border-slate-800/60 transition-all hover:bg-slate-900 text-slate-400 w-full flex items-center gap-1.5";
+                }
+            });
+
+            logConsole(`Tactical item cabinet unlocked. Subject equipped with: [${ITEMS[key].name.toUpperCase()}].`, "system");
+        }
+
+        function setStance(key) {
+            initAudio();
+            playSynthSound(350, 0.15, "sine");
+            gameState.currentStance = key;
+
+            // Highlight selected stance button
+            Object.keys(STANCES).forEach(k => {
+                const el = document.getElementById(`stanceBtn_${k}`);
+                if (k === key) {
+                    el.className = "px-2 py-1.5 text-left text-[11px] font-mono-retro rounded-xl border border-yellow-500 text-yellow-400 bg-yellow-950/20 glow-yellow transition-all w-full flex items-center gap-1.5";
+                } else {
+                    el.className = "px-2 py-1.5 text-left text-[11px] font-mono-retro rounded-xl border border-slate-800/60 transition-all hover:bg-slate-900 text-slate-400 w-full flex items-center gap-1.5";
+                }
+            });
+
+            logConsole(`Cognitive neural filter shifting. Emotional attitude set to: [${STANCES[key].name.toUpperCase()}] stance.`, "system");
+        }
+
+        function selectPreset(key) {
+            initAudio();
+            playSynthSound(300, 0.2, "sine", 600);
+            const p = PRESETS[key];
+            gameState.currentCreatureKey = key;
+            gameState.currentCreatureName = p.name;
+            gameState.maxCreatureHp = p.hp;
+            gameState.creatureHp = p.hp;
+            
+            // Clear custom visual on change
+            document.getElementById("creatureImage").classList.add("hidden");
+            document.getElementById("imagePlaceholder").classList.remove("hidden");
+
+            updateThreatStats(p.aggression, p.armor, p.speed, p.weakness);
+            updateUI();
+            logConsole(`Threat Vector updated to: [${p.name.toUpperCase()}]. Re-evaluating tactical weakpoints.`, "system");
+        }
+
+        function updateThreatStats(agg, arm, spd, weak) {
+            document.getElementById("statAggression").innerText = agg;
+            document.getElementById("statArmor").innerText = arm;
+            document.getElementById("statSpeed").innerText = spd;
+            document.getElementById("statWeakness").innerText = weak;
+        }
+
+        function summonCustomCreature() {
+            const input = document.getElementById("creatureInput").value.trim();
+            if (!input) {
+                showModal("DNA Synthesis Error: Specify an animal to reconstruct.");
+                return;
+            }
+            initAudio();
+            playSynthSound(150, 0.4, "sine", 400);
+
+            // Dynamically scale a custom creature
+            gameState.currentCreatureKey = "CUSTOM";
+            gameState.currentCreatureName = input.charAt(0).toUpperCase() + input.slice(1);
+            
+            // Give custom random logical health
+            const customHp = Math.floor(Math.random() * 80) + 90;
+            gameState.maxCreatureHp = customHp;
+            gameState.creatureHp = customHp;
+
+            document.getElementById("creatureImage").classList.add("hidden");
+            document.getElementById("imagePlaceholder").classList.remove("hidden");
+
+            // Randomize custom bio threat details
+            const elements = ["Acid Sprays", "Heavy Kinetic Shell", "Bioluminescent Spores", "Web/Silk traps", "Cold Chitin Scales"];
+            const customWeak = elements[Math.floor(Math.random() * elements.length)];
+            updateThreatStats("UNPREDICTABLE (?/10)", "Unknown Composite", "Rapid Swarms", customWeak);
+
+            gameState.stats.mutations += 1;
+            saveStats();
+            updateStatsUI();
+            updateUI();
+            logConsole(`Custom Mutation cataloged: [${gameState.currentCreatureName.toUpperCase()}]. Cellular replication underway.`, "warning");
+        }
+
+        // Update Health bars and Text interfaces
+        function updateUI() {
+            document.getElementById("playerHpText").innerText = `${gameState.playerHp} / 100 HP`;
+            const playerPct = Math.max(0, Math.min(100, gameState.playerHp));
+            const playerBar = document.getElementById("playerHpBar");
+            playerBar.style.width = `${playerPct}%`;
+            
+            // Red warning if health low
+            if (playerPct < 35) {
+                playerBar.className = "bg-gradient-to-r from-red-600 to-red-400 h-full w-full transition-all duration-500";
+            } else {
+                playerBar.className = "bg-gradient-to-r from-emerald-600 to-emerald-400 h-full w-full transition-all duration-500";
+            }
+
+            document.getElementById("creatureNameText").innerText = `Threat: ${gameState.currentCreatureName.toUpperCase()}`;
+            document.getElementById("creatureHpText").innerText = `${gameState.creatureHp} / ${gameState.maxCreatureHp} HP`;
+            const creaturePct = Math.max(0, Math.min(100, (gameState.creatureHp / gameState.maxCreatureHp) * 100));
+            document.getElementById("creatureHpBar").style.width = `${creaturePct}%`;
+        }
+
+        function updateStatsUI() {
+            document.getElementById("statSurvivals").innerText = gameState.stats.survivals;
+            document.getElementById("statDeaths").innerText = gameState.stats.deaths;
+            document.getElementById("statMutations").innerText = gameState.stats.mutations;
+        }
+
+        function saveStats() {
+            try {
+                localStorage.setItem(`laes_score_${appId}`, JSON.stringify(gameState.stats));
+            } catch(e){}
+        }
+
+        function resetSimulator() {
+            initAudio();
+            playSynthAlarm();
+            gameState.playerHp = 100;
+            const defaultKey = "MANTIS";
+            const p = PRESETS[defaultKey];
+            gameState.currentCreatureKey = defaultKey;
+            gameState.currentCreatureName = p.name;
+            gameState.maxCreatureHp = p.hp;
+            gameState.creatureHp = p.hp;
+
+            document.getElementById("creatureInput").value = "";
+            document.getElementById("customActionInput").value = "";
+            document.getElementById("creatureImage").classList.add("hidden");
+            document.getElementById("imagePlaceholder").classList.remove("hidden");
+            document.getElementById("consoleFeed").innerHTML = "";
+
+            setEnvironment("SUBWAY");
+            setItem("NONE");
+            setStance("CALCULATING");
+            updateThreatStats(p.aggression, p.armor, p.speed, p.weakness);
+
+            updateUI();
+            logConsole("CORES INJECTED. System calibration complete. Prepare for bio-simulation.", "system");
+        }
+
+        // Unified Game Logger
+        function logConsole(message, type = "normal") {
+            const feed = document.getElementById("consoleFeed");
+            const time = new Date().toLocaleTimeString();
+            const logItem = document.createElement("div");
+            logItem.className = "border-b border-slate-900/60 pb-2 animate-fadeIn leading-relaxed";
+
+            let icon = "terminal";
+            let color = "text-slate-300";
+            if (type === "system") {
+                color = "text-emerald-400";
+                icon = "cpu";
+            } else if (type === "warning" || type === "alert") {
+                color = "text-yellow-400";
+                icon = "shield-alert";
+            } else if (type === "damage") {
+                color = "text-red-400";
+                icon = "swords";
+            } else if (type === "success") {
+                color = "text-emerald-300 font-bold";
+                icon = "check-circle-2";
+            }
+
+            logItem.innerHTML = `
+                <div class="flex items-center gap-1.5 mb-1">
+                    <span class="text-[10px] text-slate-500 font-mono-retro font-light">[${time}]</span>
+                    <i data-lucide="${icon}" class="w-3.5 h-3.5 ${color}"></i>
+                    <span class="text-[10px] font-bold tracking-widest ${color} uppercase">${type}</span>
+                </div>
+                <p class="text-xs text-slate-200 pl-4 font-mono-retro leading-relaxed">${message}</p>
+            `;
+
+            feed.appendChild(logItem);
+            feed.scrollTop = feed.scrollHeight;
+            lucide.createIcons();
+        }
+
+        // Custom Modal handlers
+        function showModal(msg) {
+            document.getElementById("modalBody").innerText = msg;
+            document.getElementById("customModal").classList.remove("hidden");
+        }
+
+        function closeModal() {
+            document.getElementById("customModal").classList.add("hidden");
+        }
+
+        // Dynamic Neural simulation with Gemini APIs
+        async function callGeminiNeuralSimulation(promptText) {
+            const systemPrompt = `You are narrating a tactical survival-horror text RPG. 
+A human is currently trapped with a dog-sized (Labrador dimensions, 30kg) creature: [${gameState.currentCreatureName}].
+Location Environment: [${ENVIRONMENTS[gameState.currentEnv].name} - ${ENVIRONMENTS[gameState.currentEnv].desc}]
+Equipped Tactical Tool: [${ITEMS[gameState.currentItem].name} - ${ITEMS[gameState.currentItem].desc}]
+Player Behavioral Stance: [${STANCES[gameState.currentStance].name}]
+
+Write a highly vivid, cinematic, and physical outcome (2-3 sentences max) based on the combined factors of location, items, behavior, and strategy.
+Then calculate precise, logical damage values reflecting the combination (e.g., attacking with a Sledgehammer yields high creature damage but might leave the player vulnerable, while a flirty stance is dangerous and leads to chaotic, funny, or high-damage outcomes).
+Return ONLY a valid JSON response matching this schema:
+{
+  "narrative": "A cinematic, tense, environmental prose segment of the action.",
+  "playerDamage": number,
+  "creatureDamage": number
+}`;
+            
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                const payload = {
+                    contents: [{ parts: [{ text: promptText }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: { 
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                narrative: { type: "STRING" },
+                                playerDamage: { type: "NUMBER" },
+                                creatureDamage: { type: "NUMBER" }
+                            },
+                            required: ["narrative", "playerDamage", "creatureDamage"]
+                        }
+                    }
+                };
+
+                // Retry with exponential backoff
+                let delay = 1000;
+                for (let i = 0; i < 5; i++) {
+                    try {
+                        const response = await fetch(url, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            return JSON.parse(data.candidates[0].content.parts[0].text);
+                        }
+                    } catch (e) {}
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+                throw new Error("Neural core failed to compute.");
+            } catch (err) {
+                console.error("Gemini fallback triggered: ", err);
+                return null;
+            }
+        }
+
+        // Trigger AI Imagen model for visual rendering
+        async function triggerImageGeneration() {
+            initAudio();
+            playSynthSound(440, 0.4, "sine", 880);
+            
+            const renderBtn = document.getElementById("renderBtn");
+            const imageLoading = document.getElementById("imageLoading");
+            const creatureImage = document.getElementById("creatureImage");
+            const imagePlaceholder = document.getElementById("imagePlaceholder");
+
+            renderBtn.disabled = true;
+            renderBtn.innerText = "CALIBRATING IMAGEN CORES...";
+            imageLoading.classList.remove("hidden");
+
+            // Prompt incorporates environmental variables for beautiful, grounded visuals!
+            const promptText = `A terrifying, realistic survival horror photographic shot of a massive, 30kg Labrador Retriever-sized ${gameState.currentCreatureName} located inside a dark, eerie ${ENVIRONMENTS[gameState.currentEnv].name}. Dramatic volumetric low-key cinematic lighting, shallow depth of field, sharp details on biological carapace, tentacles and eyes. Highly atmospheric.`;
+
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+                const payload = {
+                    instances: [{ prompt: promptText }],
+                    parameters: { sampleCount: 1 }
+                };
+
+                let delay = 1000;
+                let generatedUrl = null;
+                for (let i = 0; i < 5; i++) {
+                    try {
+                        const response = await fetch(url, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            generatedUrl = `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+                            break;
+                        }
+                    } catch (e) {}
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+
+                if (generatedUrl) {
+                    creatureImage.src = generatedUrl;
+                    creatureImage.classList.remove("hidden");
+                    imagePlaceholder.classList.add("hidden");
+                    logConsole(`Grounded visual matrix compiled for [${gameState.currentCreatureName.toUpperCase()}] in the [${ENVIRONMENTS[gameState.currentEnv].name.toUpperCase()}].`, "system");
+                    playSynthSound(600, 0.5, "sawtooth", 200);
+                } else {
+                    throw new Error("Unable to synthesize image base.");
+                }
+
+            } catch (err) {
+                showModal("Bio-Feed Offline: Real-time visual generations are currently unavailable on this console loop. Standard structural files are preserved.");
+            } finally {
+                imageLoading.classList.add("hidden");
+                renderBtn.disabled = false;
+                renderBtn.innerText = "Render AI Visual (Imagen 4)";
+            }
+        }
+
+        // Handle strategic actions
+        async function triggerAction(actionType) {
+            if (gameState.playerHp <= 0 || gameState.creatureHp <= 0) {
+                showModal("Simulation Locked: Terminal state has been reached. Please reset containment cores.");
+                return;
+            }
+
+            initAudio();
+            playSynthSound(500, 0.15, "triangle", 300);
+
+            // Dynamically craft descriptive action prompts
+            const tool = ITEMS[gameState.currentItem].name;
+            const stance = STANCES[gameState.currentStance].name;
+            const env = ENVIRONMENTS[gameState.currentEnv].name;
+            const promptText = `Player decides to ${actionType} while in a ${stance} stance, using their equipped [${tool}] inside the [${env}].`;
+            
+            await executeSimulationCycle(promptText, actionType);
+        }
+
+        // Handle typing custom actions
+        async function triggerCustomAction() {
+            if (gameState.playerHp <= 0 || gameState.creatureHp <= 0) {
+                showModal("Simulation Locked: Terminal state has been reached.");
+                return;
+            }
+
+            const input = document.getElementById("customActionInput").value.trim();
+            if (!input) {
+                showModal("Tactical Protocol Error: Specify a physical strategy sentence first.");
+                return;
+            }
+
+            initAudio();
+            playSynthSound(400, 0.2, "sine", 800);
+            document.getElementById("customActionInput").value = "";
+
+            const tool = ITEMS[gameState.currentItem].name;
+            const stance = STANCES[gameState.currentStance].name;
+            const env = ENVIRONMENTS[gameState.currentEnv].name;
+            const promptText = `Player performs custom custom tactical action: "${input}" while in a ${stance} stance, using their equipped [${tool}] inside the [${env}].`;
+            
+            await executeSimulationCycle(promptText, "CUSTOM", input);
+        }
+
+        // Master loop processing the combat math
+        async function executeSimulationCycle(promptText, fallbackType, customActionText = "") {
+            const thinkingLoader = document.getElementById("aiThinking");
+            const thinkingText = document.getElementById("aiThinkingText");
+            
+            thinkingText.innerText = "AI Simulator calculating tactical variable intersections...";
+            thinkingLoader.classList.remove("hidden");
+            thinkingLoader.classList.add("flex");
+
+            let result = null;
+
+            if (navigator.onLine) {
+                result = await callGeminiNeuralSimulation(promptText);
+            }
+
+            thinkingLoader.classList.add("hidden");
+            thinkingLoader.classList.remove("flex");
+
+            let narrative = "";
+            let pDmg = 0;
+            let cDmg = 0;
+
+            if (result) {
+                narrative = result.narrative;
+                pDmg = result.playerDamage;
+                cDmg = result.creatureDamage;
+            } else {
+                // Fallback Engine combining items, environment, stance and strategy
+                const presetKey = gameState.currentCreatureKey;
+                const dbEntry = PRESETS[presetKey];
+                const env = ENVIRONMENTS[gameState.currentEnv].name;
+                const tool = ITEMS[gameState.currentItem].name;
+                const stance = STANCES[gameState.currentStance].name;
+
+                if (dbEntry && dbEntry.localFails[fallbackType]) {
+                    narrative = dbEntry.localFails[fallbackType];
+                    narrative += ` This occurs with clumsy coordination inside the ${env}, while awkwardly grasping your ${tool} in a ${stance} panic.`;
+                    
+                    pDmg = dbEntry.localDamage[fallbackType][0];
+                    cDmg = dbEntry.localDamage[fallbackType][1];
+                } else {
+                    const actionPhrase = customActionText ? `"${customActionText}"` : "cautious physical scramble";
+                    narrative = `You executed a ${actionPhrase} with your ${tool} inside the ${env}. Clad in a ${stance} frame of mind, you traded rapid hits back and forth against the massive, scuttling ${gameState.currentCreatureName}.`;
+                    pDmg = Math.floor(Math.random() * 20) + 10;
+                    cDmg = Math.floor(Math.random() * 25) + 10;
+                }
+
+                // Balance adjustment with items & stances locally
+                const itemData = ITEMS[gameState.currentItem];
+                const stanceData = STANCES[gameState.currentStance];
+
+                cDmg = Math.max(0, Math.floor((cDmg + itemData.attackMod) * stanceData.dmgMod));
+                pDmg = Math.max(0, Math.floor((pDmg - itemData.defenseMod) * stanceData.receiveMod));
+            }
+
+            // Apply Damage
+            gameState.playerHp = Math.max(0, gameState.playerHp - pDmg);
+            gameState.creatureHp = Math.max(0, gameState.creatureHp - cDmg);
+
+            if (pDmg > 0) playDamageSound(true);
+            if (cDmg > 0) setTimeout(() => playDamageSound(false), 200);
+
+            // Log Narrative Results
+            logConsole(narrative, "alert");
+            if (cDmg > 0 || pDmg > 0) {
+                logConsole(`COMBAT DATA: Inflicted ${cDmg} structural force. Absorbed ${pDmg} incoming cellular trauma.`, "damage");
+            }
+
+            updateUI();
+
+            // Check game-over condition
+            if (gameState.playerHp <= 0) {
+                setTimeout(() => {
+                    playSynthSound(70, 0.9, "sawtooth", 30);
+                    logConsole("CRITICAL BIOMETRICS FAILED: SUBJECT EXPIRED. PURGE FLUID RUNNING.", "system");
+                    gameState.stats.deaths += 1;
+                    saveStats();
+                    updateStatsUI();
+                    showModal(`DEFEAT: Your ${STANCES[gameState.currentStance].name} strategy inside the ${ENVIRONMENTS[gameState.currentEnv].name} was completely overwhelmed. Try selecting different items!`);
+                }, 600);
+            } else if (gameState.creatureHp <= 0) {
+                setTimeout(() => {
+                    playSynthSound(950, 0.6, "sine", 250);
+                    logConsole(`VICTORY: ${gameState.currentCreatureName} cleared from target sector! Containment sealed.`, "success");
+                    gameState.stats.survivals += 1;
+                    saveStats();
+                    updateStatsUI();
+                    showModal(`SUCCESS: Extraction completed! You successfully survived the Labrador-sized threat using the ${ITEMS[gameState.currentItem].name} tool!`);
+                }, 600);
+            }
+        }
+    </script>
+</body>
+</html>
